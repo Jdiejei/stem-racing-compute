@@ -12,7 +12,7 @@ on:
 permissions: { contents: read }
 env:
   PY_DEPS: numpy==2.4.6 scipy==1.17.1 pandas trimesh==5.2.0 scikit-image shapely rtree==1.4.1 mapbox-earcut manifold3d==3.5.4 fast_simplification==0.2.0 jax jaxlib matplotlib pymeshlab==2025.7.post1
-  CFDJ0: '{"layer_overrides":{"nSurfaceLayers":0}}'
+  CFDJ0: '{"layer_overrides":{"nSurfaceLayers":0},"decompose":"hierarchical"}'
 jobs:
   parent:
     runs-on: ubuntu-24.04
@@ -31,7 +31,7 @@ jobs:
       - run: pip install $PY_DEPS
       - working-directory: part5-simulation
         run: |
-          python -W ignore run_car.py --out ../out/p --body-json '{}' --skin-mm ${{ inputs.skin_p }} --cfd --res medium --np 2 --cfd-iters 1000 --keep-runs --cfd-json "$CFDJ0" 2>&1 | tail -2
+          python -W ignore run_car.py --out ../out/p --body-json '{}' --skin-mm ${{ inputs.skin_p }} --cfd --res medium --np 4 --cfd-iters 1000 --keep-runs --cfd-json "$CFDJ0" 2>&1 | tail -2
           d=$(ls -td ../part2-simulation/cfd_case_template/runs/*/ | head -1); echo "parent run dir $d"
           tar czf ../parent.tgz -C "$d" .
       - uses: actions/upload-artifact@v4
@@ -65,8 +65,8 @@ jobs:
       - working-directory: part5-simulation
         run: |
           mkdir -p /tmp/parent && tar xzf ../parent.tgz -C /tmp/parent
-          J="$CFDJ0"; if [ "${{ matrix.m.warm }}" = "1" ]; then J='{"layer_overrides":{"nSurfaceLayers":0},"warm_from":"/tmp/parent"}'; fi
+          J="$CFDJ0"; if [ "${{ matrix.m.warm }}" = "1" ]; then J='{"layer_overrides":{"nSurfaceLayers":0},"decompose":"hierarchical","warm_from":"/tmp/parent"}'; fi
           start=$(date +%s)
-          python -W ignore run_car.py --out ../out/c --body-json '{}' --skin-mm ${{ inputs.skin_c }} --cfd --res medium --np 2 --cfd-iters ${{ matrix.m.it }} --cfd-json "$J" 2>&1 | tail -2
+          python -W ignore run_car.py --out ../out/c --body-json '{}' --skin-mm ${{ inputs.skin_c }} --cfd --res medium --np 4 --cfd-iters ${{ matrix.m.it }} --cfd-json "$J" 2>&1 | tail -2
           echo "PARENT minutes $(( ($(date +%s) - start) / 60 ))"
           python -c "import json; c=json.load(open('../out/c/summary.json'))['cfd_initial']; print('PARENT ${{ matrix.m.id }} T', repr(c['T_at_target_s']), 'D20', repr(c['D20_N']))"
