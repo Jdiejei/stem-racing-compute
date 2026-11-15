@@ -9,10 +9,9 @@ RUN apt-get update -q && apt-get install -y -q build-essential flex bison cmake 
       libptscotch-dev libfftw3-dev git curl ca-certificates
 RUN curl -sL https://dl.openfoam.com/source/v2412/OpenFOAM-v2412.tgz | tar xz -C /opt
 WORKDIR /opt/OpenFOAM-v2412
-# -march=x86-64-v3 only: no -ffast-math (it reorders sums and breaks repeatability)
-RUN sed -i 's/^cOPT *=.*/cOPT = -O3 -march=x86-64-v3/; s/^c++OPT *=.*/c++OPT = -O3 -march=x86-64-v3/' \
-      wmake/rules/linux64Gcc/cOpt wmake/rules/linux64Gcc/c++Opt \
- && bash -c 'source etc/bashrc WM_MPLIB=SYSTEMOPENMPI; ./Allwmake -j -s -q -l'
+# -march=x86-64-v3 only: no -ffast-math (it reorders sums and breaks repeatability).
+# ESI v2412 appends WM_CFLAGS / WM_CXXFLAGS to its own Opt flags (rule-file paths moved, so no sed).
+RUN bash -c 'export WM_CFLAGS="-march=x86-64-v3" WM_CXXFLAGS="-march=x86-64-v3";       source etc/bashrc WM_MPLIB=SYSTEMOPENMPI; ./Allwmake -j -s -q -l'  && test -x platforms/*/bin/simpleFoam
 FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update -q && apt-get install -y -q openmpi-bin libopenmpi3t64 libscotch-7.0 libptscotch-7.0 \
