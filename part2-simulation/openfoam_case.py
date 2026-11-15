@@ -195,6 +195,13 @@ class OpenFOAMRunConfig:
     # body base one level finer than the near wake. Empty / 0 = plain recipe.
     plus_surfaces: tuple = ()
     plus_wake_m: float = 0.0
+    # Speed trials (reviewer, 2026-11-15), all off by default so today's answers are
+    # unchanged. Each must re-pass repeat <= 0.01 ms and the noise mark before use.
+    #   p_solver: replaces the pressure solver block body, e.g.
+    #     "solver GAMG; tolerance 1e-7; relTol 0.01; smoother DICGaussSeidel; nCellsInCoarsestLevel 50;"
+    #   n_non_orth: SIMPLE nNonOrthogonalCorrectors (today 1 = two pressure solves a step)
+    p_solver: Optional[str] = None
+    n_non_orth: Optional[int] = None
 
     @property
     def resolved(self) -> bool:
@@ -1340,7 +1347,7 @@ def build_case(run_dir: str, stl_path: str, cfg: OpenFOAMRunConfig) -> dict:
                              layer_overrides=None if cfg.resolved else cfg.layer_overrides))
     _write(run / "system" / "controlDict", build_control_dict(cfg, frontal_area_half))
     _write(run / "system" / "fvSchemes", _FV_SCHEMES)
-    _write(run / "system" / "fvSolution", _FV_SOLUTION)
+    _write(run / "system" / "fvSolution", fv_solution(cfg))
     _write(run / "system" / "surfaceFeatureExtractDict",
            _header("dictionary", "surfaceFeatureExtractDict") + _SURFACE_FEATURE_EXTRACT_BODY)
     _write(run / "system" / "meshQualityDict", _MESH_QUALITY_DICT)
@@ -2230,6 +2237,25 @@ relaxationFactors
     }
 }
 """
+
+_P_BLOCK = """    p
+    {
+        solver          GAMG;
+        tolerance       1e-7;
+        relTol          0.01;
+        smoother        GaussSeidel;
+    }"""
+
+
+def fv_solution(cfg) -> str:
+    """fvSolution for this run: the frozen recipe unless a speed trial is set."""
+    s = _FV_SOLUTION
+    if cfg.p_solver:
+        s = s.replace(_P_BLOCK, "    p\n    {\n        " + cfg.p_solver.strip() + "\n    }")
+    if cfg.n_non_orth is not None:
+        s = s.replace("nNonOrthogonalCorrectors 1;", f"nNonOrthogonalCorrectors {int(cfg.n_non_orth)};")
+    return s
+
 
 # car.stl { ... } keyed by filename — matches the shipped ESI utility
 # `surfaceFeatureExtract` / dict `surfaceFeatureExtractDict` (verified against

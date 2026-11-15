@@ -696,3 +696,13 @@ def test_fine_and_resolved_keep_only_the_latest_write(monkeypatch):
         assert "purgeWrite      1;" in oc.build_control_dict(OpenFOAMRunConfig(resolution=res), 1e-3)
     monkeypatch.setenv("P2_SLIM", "1")
     assert oc.slim_disk(OpenFOAMRunConfig(resolution="medium"))
+
+
+def test_speed_trial_switches_default_to_the_frozen_recipe():
+    from openfoam_case import OpenFOAMRunConfig, fv_solution, _FV_SOLUTION, _P_BLOCK
+    assert _P_BLOCK in _FV_SOLUTION                      # the block we replace really is there
+    assert fv_solution(OpenFOAMRunConfig()) == _FV_SOLUTION
+    c = OpenFOAMRunConfig(p_solver="solver GAMG; tolerance 1e-7; relTol 0.01; smoother DICGaussSeidel;",
+                          n_non_orth=0)
+    s = fv_solution(c)
+    assert "DICGaussSeidel" in s and "nNonOrthogonalCorrectors 0;" in s and _P_BLOCK not in s
