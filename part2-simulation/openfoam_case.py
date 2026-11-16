@@ -195,6 +195,20 @@ class OpenFOAMRunConfig:
     # body base one level finer than the near wake. Empty / 0 = plain recipe.
     plus_surfaces: tuple = ()
     plus_wake_m: float = 0.0
+    # Speed trials (reviewer, 2026-11-15), all off by default so today's answers are
+    # unchanged. Each must re-pass repeat <= 0.01 ms and the noise mark before use.
+    #   p_solver: replaces the pressure solver block body, e.g.
+    #     "solver GAMG; tolerance 1e-7; relTol 0.01; smoother DICGaussSeidel; nCellsInCoarsestLevel 50;"
+    #   n_non_orth: SIMPLE nNonOrthogonalCorrectors (today 1 = two pressure solves a step)
+    p_solver: Optional[str] = None
+    n_non_orth: Optional[int] = None
+    # Four-core repeatability trials (FOUR_CORE_PLAN.md). Defaults = today's recipe.
+    #   decompose: "scotch" (today) or "hierarchical" (geometric, the same cut for the same mesh)
+    #   comms: None (OpenFOAM default nonBlocking) or "blocking" / "scheduled"
+    #   mpi_args: extra mpirun arguments, e.g. "--bind-to core"
+    decompose: str = "scotch"
+    comms: Optional[str] = None
+    mpi_args: str = ""
 
     @property
     def resolved(self) -> bool:
@@ -765,6 +779,7 @@ def build_control_dict(cfg: OpenFOAMRunConfig, ref_area_half: float) -> str:
     lref = cfg.reference_length_m
     return _header("dictionary", "controlDict") + f"""
 application     simpleFoam;
+{"OptimisationSwitches { commsType " + cfg.comms + "; }" if cfg.comms else ""}
 startFrom       startTime;
 startTime       0;
 stopAt          endTime;
@@ -1340,11 +1355,11 @@ def build_case(run_dir: str, stl_path: str, cfg: OpenFOAMRunConfig) -> dict:
                              layer_overrides=None if cfg.resolved else cfg.layer_overrides))
     _write(run / "system" / "controlDict", build_control_dict(cfg, frontal_area_half))
     _write(run / "system" / "fvSchemes", _FV_SCHEMES)
-    _write(run / "system" / "fvSolution", _FV_SOLUTION)
+    _write(run / "system" / "fvSolution", fv_solution(cfg))
     _write(run / "system" / "surfaceFeatureExtractDict",
            _header("dictionary", "surfaceFeatureExtractDict") + _SURFACE_FEATURE_EXTRACT_BODY)
     _write(run / "system" / "meshQualityDict", _MESH_QUALITY_DICT)
-    _write(run / "system" / "decomposeParDict", _decompose_dict(cfg.n_subdomains))
+    _write(run / "system" / "decomposeParDict", _decompose_dict(cfg.n_subdomains, cfg.decompose))
     _write(run / "constant" / "transportProperties", build_transport_properties(cfg))
     _write(run / "constant" / "turbulenceProperties", build_turbulence_properties(cfg))
 
@@ -1468,11 +1483,31 @@ boundaryField
 """)
 
 
-def _decompose_dict(n: int) -> str:
-    return _header("dictionary", "decomposeParDict") + f"""
+def _decompose_dict(n: int, method: str = "scotch") -> str:
+    if method == "scotch":
+        return _header("dictionary", "decomposeParDict") + f"""
 numberOfSubdomains {n};
 method          scotch;
 """
+    if method != "hierarchical":
+        raise ValueError(f"decompose must be scotch or hierarchical, not {method!r}")
+    # split along x only (the long axis): the same cut for the same mesh on any machine
+    return _header("dictionary", "decomposeParDict") + f"""
+numberOfSubdomains {n};
+method          hierarchical;
+coeffs          {{ n ({n} 1 1); order xyz; }}
+"""
+
+
+def _log_partition(run: Path) -> None:
+    """Print a fingerprint of which cell went to which core, so repeats can show the cut was identical."""
+    import hashlib
+    h = hashlib.sha256()
+    for d in sorted(run.glob("processor*"), key=lambda p: int(p.name[9:])):
+        f = d / "constant" / "polyMesh" / "cellProcAddressing"
+        if f.exists():
+            h.update(f.read_bytes())
+    print(f"[openfoam_case] partition sha {h.hexdigest()[:16]}", flush=True)
 
 
 def _run(cmd: str, cwd: Path, bashrc: str, log_name: str, timeout: int) -> str:
@@ -1827,7 +1862,8 @@ def run_stages(run_dir: str, cfg: OpenFOAMRunConfig, bashrc: str,
         else:
             checkmesh = _mesh(run, cfg, bashrc, timeout_s)
             _run("decomposePar -force", run, bashrc, "decomposePar.log", timeout_s)
-        solver_log = _solve_with_budget(f"mpirun -np {cfg.n_subdomains} {solver} -parallel",
+        _log_partition(run)
+        solver_log = _solve_with_budget(f"mpirun {cfg.mpi_args} -np {cfg.n_subdomains} {solver} -parallel",
                                         run, bashrc, "solver.log", timeout_s)
         _checkpoint_if_short(run, cfg)
         _run("reconstructPar -latestTime", run, bashrc, "reconstructPar.log", timeout_s)
@@ -2230,6 +2266,25 @@ relaxationFactors
     }
 }
 """
+
+_P_BLOCK = """    p
+    {
+        solver          GAMG;
+        tolerance       1e-7;
+        relTol          0.01;
+        smoother        GaussSeidel;
+    }"""
+
+
+def fv_solution(cfg) -> str:
+    """fvSolution for this run: the frozen recipe unless a speed trial is set."""
+    s = _FV_SOLUTION
+    if cfg.p_solver:
+        s = s.replace(_P_BLOCK, "    p\n    {\n        " + cfg.p_solver.strip() + "\n    }")
+    if cfg.n_non_orth is not None:
+        s = s.replace("nNonOrthogonalCorrectors 1;", f"nNonOrthogonalCorrectors {int(cfg.n_non_orth)};")
+    return s
+
 
 # car.stl { ... } keyed by filename — matches the shipped ESI utility
 # `surfaceFeatureExtract` / dict `surfaceFeatureExtractDict` (verified against

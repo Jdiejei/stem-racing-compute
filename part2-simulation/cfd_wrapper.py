@@ -223,6 +223,11 @@ def run_half_car_cfd(
     body_scale_y: float = 1.0,
     plus_surfaces: tuple = (),
     plus_wake_m: float = 0.0,
+    p_solver: Optional[str] = None,
+    n_non_orth: Optional[int] = None,
+    decompose: str = "scotch",
+    comms: Optional[str] = None,
+    mpi_args: str = "",
 ) -> tuple[HalfCarQuantities, CFDHealthReport]:
     """
     Validate a half-car STL and package OpenFOAM half-domain outputs.
@@ -291,6 +296,11 @@ def run_half_car_cfd(
         body_scale_y=body_scale_y,
         plus_surfaces=tuple(plus_surfaces),
         plus_wake_m=plus_wake_m,
+        p_solver=p_solver,
+        n_non_orth=n_non_orth,
+        decompose=decompose,
+        comms=comms,
+        mpi_args=mpi_args,
     )
 
     case_dir = Path(__file__).resolve().parent / "cfd_case_template"
