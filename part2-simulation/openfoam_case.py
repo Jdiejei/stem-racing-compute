@@ -1991,6 +1991,25 @@ def _checkpoint_if_short(run: Path, cfg) -> None:
                             f"{cfg.max_iterations} iterations; case saved in {run}")
 
 
+def save_force_histories(run_dir: str, out_dir: Optional[str]) -> None:
+    """Copy every force/moment history (all restart segments joined) to out_dir,
+    as <group>_force.dat / <group>_moment.dat. The run folder is deleted after a
+    good solve unless keep_run_dir, so queue jobs set P2_FORCE_OUT to keep these
+    few-hundred-kB files instead of a multi-GB case."""
+    if not out_dir:
+        return
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    pp = Path(run_dir) / "postProcessing"
+    if not pp.is_dir():
+        return
+    for g in sorted(d for d in pp.iterdir() if d.is_dir() and d.name.startswith("forces")):
+        for name in ("force.dat", "moment.dat"):
+            t = read_merged_dat(g, (name,))
+            if t:
+                (out / f"{g.name}_{name}").write_text(t)
+
+
 def _find_latest(root: Path, names: tuple[str, ...]) -> Optional[Path]:
     if not root.is_dir():
         return None
@@ -2182,6 +2201,7 @@ def invoke(stl_path: str, case_dir: str, cfg: Optional[OpenFOAMRunConfig] = None
             "courant_max": courant,
             "groups": read_group_forces(run_dir, cfg) if cfg.extra_surfaces else None,
         }
+        save_force_histories(run_dir, os.environ.get("P2_FORCE_OUT"))
         try:                       # never lose a solve to its own diagnostics
             yp = yplus_field_stats(run_dir, resolved_bashrc, cfg.stage_timeout_s)
         except Exception as exc:   # noqa: BLE001

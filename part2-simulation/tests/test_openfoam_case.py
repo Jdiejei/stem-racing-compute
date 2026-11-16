@@ -719,3 +719,15 @@ def test_four_core_switches_default_to_todays_recipe():
     import pytest
     with pytest.raises(ValueError):
         _decompose_dict(4, "random")
+
+def test_force_histories_are_copied_out():
+    with tempfile.TemporaryDirectory() as d:
+        run = Path(d) / "run"
+        (run / "postProcessing" / "forces" / "0").mkdir(parents=True)
+        (run / "postProcessing" / "forces_car" / "0").mkdir(parents=True)
+        (run / "postProcessing" / "forces" / "0" / "force.dat").write_text("# t\n1 (1 0 0)\n")
+        (run / "postProcessing" / "forces_car" / "0" / "force.dat").write_text("# t\n1 (2 0 0)\n")
+        oc.save_force_histories(str(run), str(Path(d) / "out"))
+        assert (Path(d) / "out" / "forces_force.dat").read_text().strip().endswith("1 (1 0 0)")
+        assert (Path(d) / "out" / "forces_car_force.dat").exists()
+        oc.save_force_histories(str(run), None)          # off by default
