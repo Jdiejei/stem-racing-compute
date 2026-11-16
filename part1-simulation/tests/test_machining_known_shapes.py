@@ -30,7 +30,7 @@ def _run(air, forced=None):
     grid = np.where(air | forced, D, -D).astype(np.float32)
     phi = PhiGrid("main_body", bv, grid, np.zeros_like(forced), forced)
     g = SimpleNamespace(phi=phi, region=bv)
-    rep = machining.make_machinable(g)
+    rep = machining.make_machinable(g, tool_r_mm=3.125)   # the shapes below are worked out for r = 6.25 cells
     return g.phi.grid < 0, rep
 
 

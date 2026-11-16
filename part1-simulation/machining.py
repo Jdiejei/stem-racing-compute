@@ -1,11 +1,11 @@
 """
 machining.py -- make a body the team's mill can actually cut.
 
-Team process (2026-09-27): 3-axis milling, 6.25 mm ball-end cutter, four
+Team process (2026-09-27): 3-axis milling, 6.35 mm ball-end cutter (team limit 2026-11-14: r 3.175 mm), four
 setups (top, bottom, left, right). The cartridge chamber is drilled along x.
 
 What that means for the solid S, on the body grid:
-  * the cutter is a ball of radius r = 3.125 mm moving in AIR, so the air it
+  * the cutter is a ball of radius r = 3.175 mm moving in AIR, so the air it
     can clear is the morphological OPENING of the air by that ball; the solid
     left behind is the CLOSING of S. Every concave corner gets >= r radius.
   * from the top, bottom, left and right (4 setups): every air cell is
@@ -17,13 +17,13 @@ What that means for the solid S, on the body grid:
     until it can -- the ONLY way a round cutter clears a square corner is to
     cut beyond it. Mandatory solids (cargo, T5.5 wall) are restored last.
 
-    make_machinable(geom, tool_r_mm=3.125) -> report dict   (mutates geom)
+    make_machinable(geom, tool_r_mm=3.175) -> report dict   (mutates geom)
 """
 from __future__ import annotations
 
 import numpy as np
 
-TOOL_R_MM = 3.125
+TOOL_R_MM = 3.175              # the team's smallest machined radius (team, 2026-11-14)
 
 
 def _dilate(mask, r):

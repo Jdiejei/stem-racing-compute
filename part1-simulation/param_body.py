@@ -437,7 +437,7 @@ def build(W_mm: float, x_front_mm: float, d_halo_mm: float, bp: BodyParams,
             over = (c, gc)
         if abs(fc) < best[0]:
             best = (abs(fc), gc)
-        if abs(fc) < 5e-5:
+        if abs(fc) < SIZING_TOL_KG:
             break
         a, fa, b, fb = b, fb, c, fc
         tried.append((c, fc))
@@ -446,7 +446,7 @@ def build(W_mm: float, x_front_mm: float, d_halo_mm: float, bp: BodyParams,
     # v2 CAD supports, 2026-09-28). Bisect between the closest evaluated skins
     # either side of the target.
     for _ in range(8):
-        if best[0] < 5e-5 or evals >= 16:          # BUILD_SPEC: at most 16 builds
+        if best[0] < SIZING_TOL_KG or evals >= 16:          # BUILD_SPEC: at most 16 builds
             break
         # The bracket is in skin, not in error: mass grows with the skin. Ranking by error
         # stalled on ties (one skin built nine times over, 2026-11-09).
@@ -469,7 +469,7 @@ def build(W_mm: float, x_front_mm: float, d_halo_mm: float, bp: BodyParams,
     # bodies, 2026-11-09). Take the body just over the jump and shave it by a uniform
     # inward move, which is smooth in the mass, until it is just over the target.
     trim_mm, trim_evals = 0.0, 0
-    if best[0] >= 5e-5:
+    if best[0] >= SIZING_TOL_KG:
         if over is not None:
             # the shave thins every wall by its depth: never past the 3.0 mm limit
             room = (over[1].build_report.get("min_machined_wall_mm", np.inf) - MIN_MACHINED_WALL_MM) / 2.0
@@ -480,7 +480,7 @@ def build(W_mm: float, x_front_mm: float, d_halo_mm: float, bp: BodyParams,
     # The mass steps as flat faces cross grid cells, and the closest car can be the one
     # just under: 0.17 g short put the start car at 47.997 g, under the 48 g floor. Legal
     # comes first, so under the target it takes the lightest car over it, if that is near.
-    if mass(g) - target_body_kg < -5e-5:
+    if mass(g) - target_body_kg < -SIZING_TOL_KG:
         if over is not None and mass(over[1]) - target_body_kg < 1e-3:
             g = over[1]
     g.build_report["min_machined_wall_mm"] = min_wall_mm(g.phi.grid, d)      # the body as finished (after any shave)
@@ -534,7 +534,7 @@ def _stamp_bore(g, X, Y, Z) -> int:
     return int(zone.sum() + wall.sum())
 
 
-def _shave_to(g, target_kg: float, mass, spacing_m: float, XYZ, tol_kg: float = 5e-5,
+def _shave_to(g, target_kg: float, mass, spacing_m: float, XYZ, tol_kg: float | None = None,
               max_mm: float = 1.0, steps: int = 14):
     """(body, shave mm, evaluations): g moved inward uniformly until it weighs between the
     target and target + tol_kg, or (None, 0, n) if no shave up to max_mm gets there.
@@ -567,6 +567,7 @@ def _shave_to(g, target_kg: float, mass, spacing_m: float, XYZ, tol_kg: float = 
         _close_pinches(h, spacing_m)
         return h
 
+    tol_kg = SIZING_TOL_KG if tol_kg is None else tol_kg
     lo, hi, n = 0.0, max_mm, 1
     if mass(shaved(hi)) - target_kg >= tol_kg:
         return None, 0.0, n
@@ -580,6 +581,11 @@ def _shave_to(g, target_kg: float, mass, spacing_m: float, XYZ, tol_kg: float = 
         lo, hi = (mid, hi) if e >= tol_kg else (lo, mid)
     return None, 0.0, n
 
+
+# The body is sized to 0.01 g, a fifth of the car's 0.05 g: run_car.build_car sizes the whole
+# car by moving the body target, and a body that may land anywhere within 0.05 g of it left the
+# car +0.059 g off after 8 passes (start car, anass 43723971300, 2026-11-15).
+SIZING_TOL_KG = 1e-5
 
 MILL_SPACING_MM = 0.5
 BRIDGE_MIN_MM3 = 30.0        # a loose piece at least this big is joined to the body, not dropped (0.005 g)
