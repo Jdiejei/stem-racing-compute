@@ -203,3 +203,10 @@ Part 2's fine-mesh noise once it is posted; nothing here is re-sized until then.
   Part 1 names. Still held until Part 1 names it.
 - Each chain gets its own fine compass map before its first step. Slots are shared round-robin
   between chains (`carve_loop.to_start`, `tests/test_carve_chains.py`).
+
+**Smallest keepable gain.** Copies of one car are byte-identical (hierarchical solver), so the queue
+times each car once and the keep bar is set by the measured car-to-car noise:
+bar = z(k·LOOKS)·√(σ_rep²(1/n + 1/m) + 2·σ_shape²) ≈ z·√2·σ_shape. With k = 4 candidates and 8 looks,
+z(32) ≈ 2.95, so at σ_shape = 0.3 ms a step must gain about 1.25 ms to be kept. Smaller real gains are
+not kept: this is the price of never keeping a step that is only noise. σ_shape comes from Part 2's
+fine gate file; the figure above is an example until it lands.
