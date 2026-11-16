@@ -1218,12 +1218,26 @@ def _min_wall_mm(path: str, n: int = 4000, seed: int = 1) -> tuple:
     pts, fi = trimesh.sample.sample_surface_even(m, n, seed=seed)
     nrm = m.face_normals[fi]
     origins = pts - nrm * 1e-4
-    loc, ray, tri = m.ray.intersects_location(origins, -nrm, multiple_hits=False)
+    loc, ray, tri = _first_hits(m, origins, -nrm)
     if not len(ray):
         return float("inf"), None
     opposite = (m.face_normals[tri] * nrm[ray]).sum(axis=1) < -0.5
     if not opposite.any():
         return float("inf"), None
     d = np.linalg.norm(loc[opposite] - pts[ray[opposite]], axis=1)
-    i = int(np.argmin(d))
+    i = int(np.lexsort((ray[opposite], d))[0])        # thinnest; a tie goes to the lowest ray
     return float(d[i]), np.round(pts[ray[opposite]][i], 2).tolist()
+
+
+def _first_hits(m, origins, dirs, chunk: int = 200):
+    """m.ray.intersects_location(..., multiple_hits=False) in batches of `chunk` rays. Each ray's
+    first hit does not depend on the others, so the answer is the same; casting all 8000 rays
+    at once on a dense remeshed body peaked at 11.8 GB (legality._min_wall_mm, round2 car,
+    anass 43885298807) from the ray-vs-triangle candidate lists."""
+    locs, rays, tris = [np.zeros((0, 3))], [np.zeros(0, int)], [np.zeros(0, int)]
+    for s in range(0, len(origins), chunk):
+        l, r, t = m.ray.intersects_location(origins[s:s + chunk], dirs[s:s + chunk], multiple_hits=False)
+        locs.append(np.asarray(l, float).reshape(-1, 3))
+        rays.append(np.asarray(r, int) + s)
+        tris.append(np.asarray(t, int))
+    return np.concatenate(locs), np.concatenate(rays), np.concatenate(tris)
