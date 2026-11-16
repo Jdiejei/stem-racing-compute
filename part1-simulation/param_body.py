@@ -610,7 +610,7 @@ SIZING_TOL_KG = 1e-5
 # Which walls the 3.0 mm machined limit gates in sizing (see build()): "all" every wall of the
 # finished body (the old rule); "own" only walls sizing makes thinner, the given field's own
 # thin walls reported. Stays "all" until p1_wall_stop_lab shows where the start block's are.
-WALL_SCOPE = "all"
+WALL_SCOPE = "own"               # lab2: the start block's thin walls are an unforced fin (x152 |y|14), cleaned at start
 
 MILL_SPACING_MM = 0.5
 BRIDGE_MIN_MM3 = 30.0        # a loose piece at least this big is joined to the body, not dropped (0.005 g)

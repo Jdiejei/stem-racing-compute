@@ -740,7 +740,7 @@ def _wall_half(grid: np.ndarray, spacing_m: float):
 #   "freeze":  the sub-step is undone only around such cells (one wall width), the rest of
 #              the surface keeps its move; re-checked, and undone whole if it still fails.
 # Which one goes in is decided by p1_wall_stop_lab (not yet run: Actions suspended).
-WALL_GUARD = "compare"         # the old behaviour with the fixed measure; "freeze" once the lab shows real thinning
+WALL_GUARD = "freeze"          # lab2 (Jdiejei 43910468954): real thinning of roofs over rule air -> hold locally, the rest moves
 
 
 def _thinned(before, after, spacing_m: float, min_wall_m: float):
