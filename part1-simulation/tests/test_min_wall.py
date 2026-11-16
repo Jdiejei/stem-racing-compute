@@ -172,3 +172,28 @@ def test_freeze_beside_a_thin_bridge_leaves_one_piece_and_a_distance_field():
     gm = gm[1:-1, 1:-1, 1:-1][band]
     assert 0.9 < np.median(gm) < 1.1 and np.percentile(gm, 95) < 1.3, (np.median(gm), np.percentile(gm, 95))
     assert label(phi.grid < 0)[1] == 1
+
+
+def test_wall_floor_beyond_a_designed_thin_wall():
+    """min_wall_mm_beyond leaves out a wall already under 3.0 mm: a 2.0 mm and a 5.0 mm wall
+    read 5.0 (the old floor read 2.0, so the skin could not thin at all)."""
+    from phi_updater import min_wall_mm, min_wall_mm_beyond
+    z = (np.arange(40) + 0.5) * D
+    phi = np.minimum(np.abs(z - 6e-3) - 1.0e-3, np.abs(z - 25e-3) - 2.5e-3)
+    phi = np.broadcast_to(phi, (8, 8, 40)).copy()
+    assert abs(min_wall_mm(phi, D) - 2.0) < 0.05
+    assert abs(min_wall_mm_beyond(phi, D, 3.0e-3) - 5.0) < 0.05
+
+
+def test_finish_own_scope_sizes_the_block_and_thins_no_wall(tmp_path, monkeypatch):
+    """WALL_SCOPE "own": the 2 mm start block sizes to its target (it was mass_unreachable
+    5.14 g with the old floor) and sizing thins no wall under 3.0 mm."""
+    import carve
+    import cutter
+    import param_body
+    monkeypatch.setattr(param_body, "WALL_SCOPE", "own")
+    lay = {"W": 120.3, "x_front": 46.0, "d_halo": 43.72}
+    g, _ = carve.carve(lay, [{"bias_mm": -1.0, "trust_mm": 1.0}], spacing_mm=2.0)
+    res = cutter.finish(g, lay, target_body_g=50.0, out_dir=tmp_path)
+    assert res["status"] == "ok", res.get("reason")
+    assert res["report"]["walls_thinned_under_min"] == 0

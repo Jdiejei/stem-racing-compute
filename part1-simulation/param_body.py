@@ -311,8 +311,13 @@ def build(W_mm: float, x_front_mm: float, d_halo_mm: float, bp: BodyParams,
     # measures its own thinnest wall (milling and the stamps act after the skin), and that is
     # the gate: build_report["min_machined_wall_mm"], refused by cutter.finish under 3.0.
     from geometry_contract import MIN_MACHINED_WALL_MM
-    from phi_updater import min_wall_mm
-    _w0 = min_wall_mm(np.asarray(phi0, dtype=np.float64) * 1e-3, d)
+    from phi_updater import min_wall_mm, min_wall_mm_beyond
+    _f0 = np.asarray(phi0, dtype=np.float64) * 1e-3
+    # WALL_SCOPE "own": a wall the given field already has under 3.0 mm (a rule zone's own design,
+    # stamped into a carved field) does not set the skin floor: with it, skin_lo went positive,
+    # the skin could not thin and the start block stayed 5.14 g heavy (test_cutter finish,
+    # anass 43902774172). The gate is then that sizing makes no wall thinner under 3.0 mm.
+    _w0 = min_wall_mm_beyond(_f0, d, MIN_MACHINED_WALL_MM * 1e-3) if WALL_SCOPE == "own" else min_wall_mm(_f0, d)
     skin_lo = max(-8.0, -(_w0 - MIN_MACHINED_WALL_MM) / 2.0) if np.isfinite(_w0) else -8.0
 
     def make(offset_mm, bar_to=None, bridges=None, tries=0):
@@ -472,7 +477,9 @@ def build(W_mm: float, x_front_mm: float, d_halo_mm: float, bp: BodyParams,
     if best[0] >= SIZING_TOL_KG:
         if over is not None:
             # the shave thins every wall by its depth: never past the 3.0 mm limit
-            room = (over[1].build_report.get("min_machined_wall_mm", np.inf) - MIN_MACHINED_WALL_MM) / 2.0
+            w_over = (min_wall_mm_beyond(over[1].phi.grid, d, MIN_MACHINED_WALL_MM * 1e-3) if WALL_SCOPE == "own"
+                      else over[1].build_report.get("min_machined_wall_mm", np.inf))
+            room = (w_over - MIN_MACHINED_WALL_MM) / 2.0
             g_t, trim_mm, trim_evals = _shave_to(over[1], target_body_kg, mass, d, (X, Y, Z),
                                                  max_mm=float(np.clip(room, 0.0, 1.0)))
             if g_t is not None:
@@ -484,6 +491,9 @@ def build(W_mm: float, x_front_mm: float, d_halo_mm: float, bp: BodyParams,
         if over is not None and mass(over[1]) - target_body_kg < 1e-3:
             g = over[1]
     g.build_report["min_machined_wall_mm"] = min_wall_mm(g.phi.grid, d)      # the body as finished (after any shave)
+    if WALL_SCOPE == "own" and g.phi.grid.shape == _f0.shape:
+        from phi_updater import _thinned
+        g.build_report["walls_thinned_under_min"] = int(_thinned(_f0, g.phi.grid, d, MIN_MACHINED_WALL_MM * 1e-3).sum())
     g.build_report["mass_error_g"] = (mass(g) - target_body_kg) * 1e3
     g.build_report["sizing_builds"] = evals
     g.build_report["trim_mm"], g.build_report["trim_evals"] = trim_mm, trim_evals
@@ -586,6 +596,10 @@ def _shave_to(g, target_kg: float, mass, spacing_m: float, XYZ, tol_kg: float | 
 # car by moving the body target, and a body that may land anywhere within 0.05 g of it left the
 # car +0.059 g off after 8 passes (start car, anass 43723971300, 2026-11-15).
 SIZING_TOL_KG = 1e-5
+# Which walls the 3.0 mm machined limit gates in sizing (see build()): "all" every wall of the
+# finished body (the old rule); "own" only walls sizing makes thinner, the given field's own
+# thin walls reported. Stays "all" until p1_wall_stop_lab shows where the start block's are.
+WALL_SCOPE = "all"
 
 MILL_SPACING_MM = 0.5
 BRIDGE_MIN_MM3 = 30.0        # a loose piece at least this big is joined to the body, not dropped (0.005 g)

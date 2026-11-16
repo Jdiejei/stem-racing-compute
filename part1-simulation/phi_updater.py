@@ -771,6 +771,15 @@ def wall_guard(before, phi_grid, spacing_m: float, min_wall_m: float, mode: str 
     return before, False
 
 
+def min_wall_mm_beyond(grid: np.ndarray, spacing_m: float, min_wall_m: float) -> float:
+    """The thinnest wall straight across, mm, over the walls that are at least min_wall_m: cells
+    within one cell of a wall already under it are left out (inf if none is left)."""
+    from scipy.ndimage import minimum_filter
+    h = _wall_half(grid, spacing_m)
+    keep = minimum_filter(h, size=3, mode="nearest") >= min_wall_m / 2.0
+    return float(2e3 * h[keep].min()) if keep.any() else float("inf")
+
+
 def min_wall_mm(grid: np.ndarray, spacing_m: float) -> float:
     """The body's thinnest wall straight across, mm (inf if it has no wall). See thin_wall_mask."""
     return float(2e3 * _wall_half(grid, spacing_m).min())

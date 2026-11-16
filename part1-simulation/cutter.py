@@ -144,7 +144,12 @@ def finish(geom, layout: dict, target_body_g: float, out_dir) -> dict:
                    + (" (no skin reaches it)" if br.get("mass_unreachable") else ""))
     from geometry_contract import MIN_MACHINED_WALL_MM
     res["min_machined_wall_mm"] = br.get("min_machined_wall_mm")
-    if res["status"] == "ok" and (br.get("min_machined_wall_mm") or 0.0) < MIN_MACHINED_WALL_MM:
+    import param_body
+    if param_body.WALL_SCOPE == "own":                     # only walls sizing thinned under the limit
+        if res["status"] == "ok" and br.get("walls_thinned_under_min", 1):
+            res.update(status="refused", reason=f"min_wall: sizing thinned {br.get('walls_thinned_under_min')} cells' walls "
+                                                f"under {MIN_MACHINED_WALL_MM} mm")
+    elif res["status"] == "ok" and (br.get("min_machined_wall_mm") or 0.0) < MIN_MACHINED_WALL_MM:
         res.update(status="refused", reason=f"min_wall: thinnest machined wall {br.get('min_machined_wall_mm')} mm, "
                                             f"under {MIN_MACHINED_WALL_MM} mm")
     if res["status"] == "ok":
