@@ -246,3 +246,25 @@ def test_own_start_block_has_no_free_wall_under_3(sp, monkeypatch):
     X, Y, Z = (np.asarray(g.region.origin_m)[k] * 1e3 + np.arange(g.phi.grid.shape[k]) * sp for k in range(3))
     box = np.ix_((X > 145) & (X < 162), (np.abs(Y) > 11) & (np.abs(Y) < 17), (Z > 33) & (Z < 45))
     assert not thin[box].any(), "the deck-ceiling ledge is still there"                            # (d)
+
+
+def test_roof_over_the_halo_shadow_keeps_3mm_at_1mm():
+    """The roof over the halo's front-shadow rule air (x < 73.7, |y| <= 12.5, air z 28-45 mm)
+    is the wall a shrink thins (Jdiejei 43910468954). On the 1 mm grid the loop uses (run_car
+    --cfd-mm default 1.0), a -1 mm shrink with the switches on leaves it at 3.0 mm or more, and
+    the cut still moves."""
+    import carve
+    import param_body
+    import phi_updater
+    from geometry_contract import GRID_SPACING_M  # noqa: F401  (set by carve's start_block)
+    import unified_phi as up
+    from phi_updater import thin_wall_mask
+    assert phi_updater.WALL_GUARD == "freeze" and param_body.WALL_SCOPE == "own"
+    lay = {"W": 120.3, "x_front": 46.0, "d_halo": 43.72}
+    g, reps = carve.carve(lay, [{"bias_mm": -1.0, "trust_mm": 1.0}], spacing_mm=1.0)
+    assert reps[0]["status"] == "ok" and reps[0]["substeps"] > 0, reps
+    d = up.GRID_SPACING_M
+    X, Y, Z = (np.asarray(g.region.origin_m)[k] * 1e3 + np.arange(g.phi.grid.shape[k]) * d * 1e3 for k in range(3))
+    box = np.ix_((X > 30) & (X < 73), np.abs(Y) <= 12.5, Z > 44)
+    thin = thin_wall_mask(g.phi.grid, d, 3.0e-3) & ~g.phi.hard_mask_solid
+    assert not thin[box].any(), "the roof over the halo shadow went under 3.0 mm"
