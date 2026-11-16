@@ -753,10 +753,16 @@ def _thinned(before, after, spacing_m: float, min_wall_m: float):
 
 
 def wall_guard(before, phi_grid, spacing_m: float, min_wall_m: float, mode: str | None = None,
-               tries: int = 4):
+               tries: int = 8):
     """(grid, ok): phi_grid with the 3.0 mm rule applied against `before` (see WALL_GUARD).
-    ok False means the whole sub-step must be undone."""
-    from scipy.ndimage import binary_dilation
+    ok False means the whole sub-step must be undone.
+
+    Freeze holds the whole wall a flagged cell is on: every cell of the connected under-3.0 mm
+    wall (in the moved field or before it) that holds a flagged cell, grown by one wall width.
+    Holding only a zone round the flagged cells kept exposing the wall's next stretch: the roof
+    over the halo shadow (x 40-80, z 46) ran out of tries and the shrink was refused at its
+    first sub-step (Jdiejei 43911742755)."""
+    from scipy.ndimage import binary_dilation, label
     mode = mode or WALL_GUARD
     g = phi_grid
     for _ in range(tries):
@@ -766,7 +772,10 @@ def wall_guard(before, phi_grid, spacing_m: float, min_wall_m: float, mode: str 
         if mode != "freeze":
             return before, False
         r = int(np.ceil(min_wall_m / spacing_m)) + 1
-        zone = binary_dilation(bad, iterations=r)
+        thin = (_wall_half(g, spacing_m) < min_wall_m / 2.0) | (_wall_half(before, spacing_m) < min_wall_m / 2.0) | bad
+        lab, _ = label(thin, structure=np.ones((3, 3, 3)))
+        walls = np.isin(lab, np.unique(lab[bad]))
+        zone = binary_dilation(walls, iterations=r)
         g = np.where(zone, before, g).astype(phi_grid.dtype)
     return before, False
 

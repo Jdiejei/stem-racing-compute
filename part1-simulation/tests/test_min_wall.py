@@ -268,3 +268,20 @@ def test_roof_over_the_halo_shadow_keeps_3mm_at_1mm():
     box = np.ix_((X > 30) & (X < 73), np.abs(Y) <= 12.5, Z > 44)
     thin = thin_wall_mask(g.phi.grid, d, 3.0e-3) & ~g.phi.hard_mask_solid
     assert not thin[box].any(), "the roof over the halo shadow went under 3.0 mm"
+
+
+def test_shrink_at_2mm_moves_with_the_roof_held():
+    """2:1 of the wall lab (dT_dn +1 everywhere, 2 mm block): the cut is ok and moves
+    (substeps > 0); freeze holds the halo-shadow roof as one wall, not edge by edge."""
+    import cutter
+    from geometry_contract import GRID_SPACING_M
+    from phi_updater import _thinned
+    from types import SimpleNamespace
+    from unified_phi import extract_half_surface
+    lay = {"W": 120.3, "x_front": 46.0, "d_halo": 43.72}
+    g0 = cutter.start_block(lay, spacing_mm=2.0)
+    mesh = SimpleNamespace(vertices=np.asarray(extract_half_surface(g0).vertices))
+    g, rep = cutter.cut(g0, np.ones(len(mesh.vertices)), mesh, step_m=1.0)
+    assert rep["status"] == "ok" and rep["substeps"] > 0, rep
+    assert (g.phi.grid < 0).sum() < (g0.phi.grid < 0).sum()
+    assert not _thinned(g0.phi.grid, g.phi.grid, GRID_SPACING_M, 3.0e-3).any()
