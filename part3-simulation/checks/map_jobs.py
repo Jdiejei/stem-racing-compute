@@ -33,8 +33,8 @@ def args(carve: dict, cfd: dict) -> list:
 
 def job(stage: str, ref: str, carve: dict, cfd: dict, fetch: list, save_case: bool, prio: int) -> dict:
     a = args(carve, cfd)
-    h = hashlib.sha256(json.dumps([ref, a], sort_keys=True).encode()).hexdigest()[:16]
-    return {"id": f"{stage}-{h}", "stage": stage, "prio": prio,
+    h = hashlib.sha256(json.dumps([ref, carve], sort_keys=True).encode()).hexdigest()[:20]   # = farm.rid: one car, one id
+    return {"id": f"p5-{h}", "stage": stage, "prio": prio,
             "recipe": {"repo": REPO, "ref": ref, "args": a, "fetch": fetch, "save_case": save_case}}
 
 
