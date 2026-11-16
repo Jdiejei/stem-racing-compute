@@ -318,6 +318,17 @@ def build(W_mm: float, x_front_mm: float, d_halo_mm: float, bp: BodyParams,
     # the skin could not thin and the start block stayed 5.14 g heavy (test_cutter finish,
     # anass 43902774172). The gate is then that sizing makes no wall thinner under 3.0 mm.
     _w0 = min_wall_mm_beyond(_f0, d, MIN_MACHINED_WALL_MM * 1e-3) if WALL_SCOPE == "own" else min_wall_mm(_f0, d)
+    # ...and with "own" the skin does not THIN within one wall width of such a wall: the weight
+    # _hold is 0 there and ramps to 1 over another wall width (no step in the surface), so a
+    # designed thin wall is left exactly as given and the cut guard's rule holds in sizing too.
+    _hold = None
+    if WALL_SCOPE == "own":
+        from scipy.ndimage import binary_dilation, distance_transform_edt
+        from phi_updater import thin_wall_mask
+        _r = int(np.ceil(MIN_MACHINED_WALL_MM / (d * 1e3))) + 1
+        _zone = binary_dilation(thin_wall_mask(_f0, d, MIN_MACHINED_WALL_MM * 1e-3), iterations=_r)
+        if _zone.any():
+            _hold = np.clip(distance_transform_edt(~_zone) / _r, 0.0, 1.0)
     skin_lo = max(-8.0, -(_w0 - MIN_MACHINED_WALL_MM) / 2.0) if np.isfinite(_w0) else -8.0
 
     def make(offset_mm, bar_to=None, bridges=None, tries=0):
@@ -328,7 +339,7 @@ def build(W_mm: float, x_front_mm: float, d_halo_mm: float, bp: BodyParams,
         # bodies over the 0.5 % grid mark, 2026-11-11). Pieces this big are joined instead.
         min_cells = int(np.ceil(BRIDGE_MIN_MM3 / (d * 1e3) ** 3))
         g = copy.deepcopy(base)
-        field = phi0 - offset_mm if not bp.ft_h else phi_mm(bp, X, Y, Z, x_ref_a, x_rear_mm, skin_mm=offset_mm)
+        field = (phi0 - (offset_mm if _hold is None or offset_mm >= 0 else offset_mm * _hold)) if not bp.ft_h else phi_mm(bp, X, Y, Z, x_ref_a, x_rear_mm, skin_mm=offset_mm)
         # The skin grows the body, not its length: re-cut at Ref A and the rear face after it.
         # Cut before, the front face moved forward with the skin, 4 mm into the printed nose at
         # a 4 mm skin, and at exactly 4.00 a whole slab ahead of Ref A turned solid at once
@@ -480,7 +491,7 @@ def build(W_mm: float, x_front_mm: float, d_halo_mm: float, bp: BodyParams,
             w_over = (min_wall_mm_beyond(over[1].phi.grid, d, MIN_MACHINED_WALL_MM * 1e-3) if WALL_SCOPE == "own"
                       else over[1].build_report.get("min_machined_wall_mm", np.inf))
             room = (w_over - MIN_MACHINED_WALL_MM) / 2.0
-            g_t, trim_mm, trim_evals = _shave_to(over[1], target_body_kg, mass, d, (X, Y, Z),
+            g_t, trim_mm, trim_evals = _shave_to(over[1], target_body_kg, mass, d, (X, Y, Z), hold=_hold,
                                                  max_mm=float(np.clip(room, 0.0, 1.0)))
             if g_t is not None:
                 g = g_t
@@ -544,7 +555,7 @@ def _stamp_bore(g, X, Y, Z) -> int:
     return int(zone.sum() + wall.sum())
 
 
-def _shave_to(g, target_kg: float, mass, spacing_m: float, XYZ, tol_kg: float | None = None,
+def _shave_to(g, target_kg: float, mass, spacing_m: float, XYZ, tol_kg: float | None = None, hold=None,
               max_mm: float = 1.0, steps: int = 14):
     """(body, shave mm, evaluations): g moved inward uniformly until it weighs between the
     target and target + tol_kg, or (None, 0, n) if no shave up to max_mm gets there.
@@ -563,7 +574,7 @@ def _shave_to(g, target_kg: float, mass, spacing_m: float, XYZ, tol_kg: float | 
         xa, xr = h.landmarks["ref_plane_A_m"] * 1e3, h.landmarks["rear_face_m"] * 1e3
         f = h.phi.grid.astype(np.float64) * 1e3
         ext = np.minimum(f, np.minimum(X - xa, xr - X))
-        f = np.maximum(ext + delta_mm, np.maximum(xa - X, X - xr))
+        f = np.maximum(ext + (delta_mm if hold is None else delta_mm * hold), np.maximum(xa - X, X - xr))
         h.phi.grid = (f / 1e3).astype(np.float32)
         h.phi.apply_hard_constraints()
         up.enforce_symmetry(h)

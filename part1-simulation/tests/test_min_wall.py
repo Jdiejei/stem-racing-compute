@@ -197,3 +197,25 @@ def test_finish_own_scope_sizes_the_block_and_thins_no_wall(tmp_path, monkeypatc
     res = cutter.finish(g, lay, target_body_g=50.0, out_dir=tmp_path)
     assert res["status"] == "ok", res.get("reason")
     assert res["report"]["walls_thinned_under_min"] == 0
+
+
+def test_own_scope_sizing_leaves_every_designed_thin_wall_as_given(monkeypatch):
+    """WALL_SCOPE "own": the -1 mm cut start block sizes to its target, no wall is thinned
+    under 3.0 mm, and every wall the carved field already had under 3.0 mm is no thinner
+    (the skin and the shave hold off within one wall width of it)."""
+    import carve
+    import param_body
+    from geometry_contract import GRID_SPACING_M
+    from phi_updater import _thinned, thin_wall_mask
+    monkeypatch.setattr(param_body, "WALL_SCOPE", "own")
+    lay = {"W": 120.3, "x_front": 46.0, "d_halo": 43.72}
+    g, _ = carve.carve(lay, [{"bias_mm": -1.0, "trust_mm": 1.0}], spacing_mm=2.0)
+    f0 = g.phi.grid.astype(np.float64)
+    designed = thin_wall_mask(f0, GRID_SPACING_M, 3.0e-3)
+    body = param_body.build(lay["W"], lay["x_front"], lay["d_halo"], param_body.BodyParams(),
+                            target_body_kg=0.050, field_mm=f0 * 1e3)
+    br = body.build_report
+    assert abs(br["mass_error_g"]) <= 0.05 and not br.get("mass_unreachable"), br.get("mass_error_g")
+    assert br["walls_thinned_under_min"] == 0
+    thinned = _thinned(f0, body.phi.grid, GRID_SPACING_M, 3.0e-3)
+    assert not (thinned & designed).any(), "a designed thin wall got thinner"
