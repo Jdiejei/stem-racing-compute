@@ -39,7 +39,7 @@ def spy(grid, spacing_m, min_wall_m):
         idx = np.argwhere(m)
         print("LAB start " + json.dumps({"spacing_mm": sp, "thin_cells": int(m.sum()),
               "min_wall_mm": float(2e3 * h.min()), "thin_in_forced_solid": int((m & hm_s).sum()),
-              "first": [[*map(int, i), round(2e3 * h[tuple(i)], 3)] for i in idx[:15]]}), flush=True)
+              "first": [[*np.round(np.asarray(g.region.origin_m) * 1e3 + np.array(i) * sp, 1).tolist(), round(2e3 * h[tuple(i)], 3)] for i in idx[:15]]}), flush=True)
     else:
         new = m & ~st["m0"]
         idx = np.argwhere(new)
@@ -56,6 +56,30 @@ def spy(grid, spacing_m, min_wall_m):
 
 
 pu.thin_wall_mask = spy
+_orig_thinned = pu._thinned
+
+
+def spy_thinned(before, after, spacing_m, min_wall_m):
+    """The new guard (wall_guard) calls _thinned: print each sub-step's flagged cells in mm, with
+    old (3x3x3 min) and new wall mm, phi before and after mm (growth lowers phi), rule air within 2 cells."""
+    from scipy.ndimage import binary_dilation, minimum_filter
+    bad = _orig_thinned(before, after, spacing_m, min_wall_m)
+    st["call"] += 1
+    h0 = minimum_filter(pu._wall_half(before, spacing_m), size=3, mode="nearest")
+    h1 = pu._wall_half(after, spacing_m)
+    near_air = binary_dilation(g.phi.hard_mask_air, iterations=2)
+    o = np.asarray(g.region.origin_m) * 1e3
+    idx = np.argwhere(bad)
+    cells = [[*np.round(o + i * sp, 1).tolist(),
+              round(2e3 * float(h0[tuple(i)]), 3) if np.isfinite(h0[tuple(i)]) else None,
+              round(2e3 * float(h1[tuple(i)]), 3), round(1e3 * float(before[tuple(i)]), 3),
+              round(1e3 * float(after[tuple(i)]), 3), bool(near_air[tuple(i)])] for i in idx[:30]]
+    print("LAB thinned " + json.dumps({"call": st["call"], "n": int(bad.sum()),
+          "near_rule_air": int((bad & near_air).sum()), "cells": cells}), flush=True)
+    return bad
+
+
+pu._thinned = spy_thinned
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     _, rep = cutter.cut(g, np.full(len(mesh.vertices), val), mesh, step_m=1.0)
