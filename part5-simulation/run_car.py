@@ -431,6 +431,7 @@ def parse_args(argv=None):
     ap.add_argument("--phi-npy", default=None,
                     help="a carved body instead of --body-json: 'block' (the whole legal envelope) "
                          "or a .npy field saved by a carving run")
+    ap.add_argument("--stress-car", default=None, help="SEED:I, carved stress car I of SEED (checks/stress_cars.py --carve)")
     ap.add_argument("--carve-json", default=None,
                     help="a carve.carve recipe {\"layout\": {W, x_front, d_halo}, \"edits\": [...]}: the body is carved here "
                          "through Part 1's one carve path, saved as carved.npy and used as --phi-npy")
@@ -456,6 +457,12 @@ def parse_args(argv=None):
 
 def main(argv=None):
     a = parse_args(argv)
+    if getattr(a, "stress_car", None):            # "SEED:I": the carved stress car, rebuilt here
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent / "checks"))
+        import stress_cars
+        seed, i = (int(v) for v in a.stress_car.split(":"))
+        a = parse_args(list(sys.argv[1:] if argv is None else argv) + stress_cars.run_car_args(seed, i))
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     if a.carve_json:

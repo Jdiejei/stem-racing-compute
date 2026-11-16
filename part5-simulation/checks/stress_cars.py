@@ -288,3 +288,23 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def run_car_args(seed: int, i: int) -> list:
+    """run_car arguments for carved stress car `i` of `seed` (the same car main() --carve builds):
+    its carve as a --carve-json recipe (carve.carve, the one path), its parts and the beam
+    support. For queue jobs: one car per job, rebuilt on the runner from (seed, i) alone."""
+    global SETTINGS
+    import param_body as pb
+    SETTINGS = (pattern.LOFT + [f"mode{k}" for k in range(pb.N_MODES)] + list(pattern.FLOOR)
+                + list(pattern.PARTS))
+    rng = random.Random(seed)
+    for _ in range(i + 1):
+        c = random_carve(rng)
+    lay = {"W": 120.3, "x_front": 46.0, "d_halo": 43.72,
+           **{k: v for k, v in c.get("layout", {}).items() if k in ("W", "x_front", "d_halo")}}
+    args = ["--support", "beam", "--carve-json", json.dumps({"layout": lay, "edits": carve_edits(c)})]
+    for part, flag in pattern.PART_FLAGS.items():
+        if c["car"]["parts"].get(part):
+            args += [flag, json.dumps(c["car"]["parts"][part])]
+    return args
