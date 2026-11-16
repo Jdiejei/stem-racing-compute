@@ -30,7 +30,37 @@ def start_block(layout: dict, spacing_mm: float = 1.0):
     import unified_phi as up
     g = up.build_unified_geometry(layout["W"], layout["x_front"], layout["d_halo"], init_mode="full")
     up.enforce_symmetry(g)
+    import param_body
+    if param_body.WALL_SCOPE == "own":
+        _clean_thin_walls(g)
     return g
+
+
+def _clean_thin_walls(g, rounds: int = 10) -> None:
+    """The start block keeps every legal cell solid, so it kept slivers the 3.0 mm machined wall
+    forbids: 1.2-2.3 mm at x 152, |y| 14, z 36-42 mm, the ledge at the step of the halo-to-bore
+    deck ceiling (exact_zones.halo_zones, at |y| = 12.5 mm), none of it forced solid (Jdiejei
+    43909740781). Solid on a wall under 3.0 mm that no rule forces is made air, the field
+    redistanced, the rules re-applied, until none is left. Removing solid breaks no air rule.
+    g.start_clean: rounds, cells and mm3 removed, forced-solid thin cells left."""
+    from geometry_contract import MIN_MACHINED_WALL_MM
+    from phi_updater import reinitialise_sdf, thin_wall_mask
+    import unified_phi as up
+    d = up.GRID_SPACING_M
+    cells, n = 0, 0
+    for n in range(1, rounds + 1):
+        m = thin_wall_mask(g.phi.grid, d, MIN_MACHINED_WALL_MM * 1e-3) & ~g.phi.hard_mask_solid
+        if not m.any():
+            break
+        cells += int(m.sum())
+        g.phi.grid[m] = d
+        reinitialise_sdf(g.phi)
+        g.phi.apply_hard_constraints()
+        up.enforce_symmetry(g)
+    left = thin_wall_mask(g.phi.grid, d, MIN_MACHINED_WALL_MM * 1e-3)
+    g.start_clean = {"rounds": n, "cells": cells, "mm3": cells * (d * 1e3) ** 3,
+                     "thin_left_free": int((left & ~g.phi.hard_mask_solid).sum()),
+                     "thin_left_forced": int((left & g.phi.hard_mask_solid).sum())}
 
 
 def save_field(geom, path) -> None:

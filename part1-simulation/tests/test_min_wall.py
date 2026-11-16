@@ -219,3 +219,30 @@ def test_own_scope_sizing_leaves_every_designed_thin_wall_as_given(monkeypatch):
     assert br["walls_thinned_under_min"] == 0
     thinned = _thinned(f0, body.phi.grid, GRID_SPACING_M, 3.0e-3)
     assert not (thinned & designed).any(), "a designed thin wall got thinner"
+
+
+@pytest.mark.parametrize("sp", [2.0, 1.0])
+def test_own_start_block_has_no_free_wall_under_3(sp, monkeypatch):
+    """WALL_SCOPE "own": the start block loses only its unforced slivers. (a) every rule zone
+    still holds; (b) no unforced wall under 3.0 mm is left; (c) the mass drops by about the
+    removed volume, printed; (d) the deck-ceiling ledge at x ~152, |y| ~14, z 34-44 is gone."""
+    import cutter
+    import param_body
+    import unified_phi as up
+    from phi_updater import thin_wall_mask
+    lay = {"W": 120.3, "x_front": 46.0, "d_halo": 43.72}
+    monkeypatch.setattr(param_body, "WALL_SCOPE", "all")
+    m_all = sum(c.mass_kg for c in up.compute_mass_com(cutter.start_block(lay, spacing_mm=sp)))
+    monkeypatch.setattr(param_body, "WALL_SCOPE", "own")
+    g = cutter.start_block(lay, spacing_mm=sp)
+    d = up.GRID_SPACING_M
+    solid = g.phi.grid < 0
+    assert not (solid & g.phi.hard_mask_air).any() and not (~solid & g.phi.hard_mask_solid).any()   # (a)
+    thin = thin_wall_mask(g.phi.grid, d, 3.0e-3)
+    assert not (thin & ~g.phi.hard_mask_solid).any(), g.start_clean                               # (b)
+    drop_g = (m_all - sum(c.mass_kg for c in up.compute_mass_com(g))) * 1e3
+    print(f"start clean {sp} mm: {g.start_clean}, mass drop {drop_g:.3f} g")
+    assert 0.0 <= drop_g < 2.0, (drop_g, g.start_clean)                                            # (c)
+    X, Y, Z = (np.asarray(g.region.origin_m)[k] * 1e3 + np.arange(g.phi.grid.shape[k]) * sp for k in range(3))
+    box = np.ix_((X > 145) & (X < 162), (np.abs(Y) > 11) & (np.abs(Y) < 17), (Z > 33) & (Z < 45))
+    assert not thin[box].any(), "the deck-ceiling ledge is still there"                            # (d)
