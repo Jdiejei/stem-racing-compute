@@ -402,7 +402,7 @@ def carve_recipe(a, out: Path) -> Path:
     lay = {k: float(r["layout"][k]) for k in ("W", "x_front", "d_halo")}
     a.W, a.x_front, a.d_halo = lay["W"], lay["x_front"], lay["d_halo"]
     path = out / "carved.npy"
-    reports = carve.save(lay, r.get("edits", []), path)
+    reports = carve.save(lay, r.get("edits", []), path, spacing_mm=getattr(a, "cfd_mm", 1.0))  # this car's grid
     refused = [x for x in reports if x.get("status") != "ok"]
     if refused:
         raise SystemExit(f"carve recipe refused: {refused}")

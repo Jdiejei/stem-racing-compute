@@ -23,9 +23,8 @@ def test_carve_json_is_carve_save(tmp_path, monkeypatch):
     import carve
     import run_car
     real = carve.save
-    monkeypatch.setattr(carve, "save", lambda lay, ed, p: real(lay, ed, p, spacing_mm=2.0))
     a = argparse.Namespace(carve_json=json.dumps({"layout": LAYOUT, "edits": EDITS}), phi_npy=None,
-                           W=120.3, x_front=46.0, d_halo=43.72)
+                           W=120.3, x_front=46.0, d_halo=43.72, cfd_mm=2.0)   # 2 mm: quick; the car's grid is used
     p = run_car.carve_recipe(a, tmp_path)
     assert a.phi_npy == str(p) and (a.W, a.x_front, a.d_halo) == (126.0, 48.0, 50.0)
     real(LAYOUT, EDITS, tmp_path / "direct.npy", spacing_mm=2.0)
