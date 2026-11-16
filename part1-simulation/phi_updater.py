@@ -740,7 +740,7 @@ def _wall_half(grid: np.ndarray, spacing_m: float):
 #   "freeze":  the sub-step is undone only around such cells (one wall width), the rest of
 #              the surface keeps its move; re-checked, and undone whole if it still fails.
 # Which one goes in is decided by p1_wall_stop_lab (not yet run: Actions suspended).
-WALL_GUARD = "freeze"
+WALL_GUARD = "compare"         # the old behaviour with the fixed measure; "freeze" once the lab shows real thinning
 
 
 def _thinned(before, after, spacing_m: float, min_wall_m: float):
@@ -1170,14 +1170,21 @@ def apply_adjoint_to_unified(
         before = phi.grid.copy()
         hj_update(phi, combined, step_dt)
         enforce_symmetry(geom)
+        # The wall rule first, then the detachment check, so a frozen patch is checked too.
+        g_w, wall_ok = wall_guard(before, phi.grid, GRID_SPACING_M, _wall_m)
+        if wall_ok and g_w is not phi.grid:     # frozen: the patch seam is not a distance field
+            phi.grid = g_w
+            reinitialise_sdf(phi)
+            enforce_symmetry(geom)
+            g_w, wall_ok = wall_guard(before, phi.grid, GRID_SPACING_M, _wall_m, mode="compare")
+        if not wall_ok:
+            phi.grid = before
+            enforce_symmetry(geom)
+            wall_stop = True                   # this sub-step would leave a wall under 3.0 mm
+            break
         if not _drop_islands() and ok0:
             phi.grid = before
             pinned = True                      # this sub-step would cut pinned material loose
-            break
-        phi.grid, wall_ok = wall_guard(before, phi.grid, GRID_SPACING_M, _wall_m)
-        enforce_symmetry(geom)
-        if not wall_ok:
-            wall_stop = True                   # this sub-step would leave a wall under 3.0 mm
             break
         n_done += 1
         if iface.any():

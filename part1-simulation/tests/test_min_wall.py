@@ -138,3 +138,37 @@ def test_a_1mm_bump_on_the_start_block_moves_it_and_keeps_every_wall(amp):
     far = c + np.array([-40.0, 0.0, 0.0])
     assert abs(d[ijk(far)]) < 0.25, f"{d[ijk(far)]:+.2f} mm 40 mm away"
     assert not _thinned(g0.phi.grid, g.phi.grid, GRID_SPACING_M, 3.0e-3).any()
+
+
+def _box(X, Z, x0, x1, z0, z1):
+    return np.maximum.reduce([x0 - X, X - x1, z0 - Z, Z - z1])
+
+
+def test_freeze_beside_a_thin_bridge_leaves_one_piece_and_a_distance_field():
+    """Two blocks joined by a 3.4 mm bridge; the sub-step thins the bridge to 2.6 mm and
+    grows the blocks' tops 0.8 mm. Freeze keeps the bridge (one piece, no wall under 3.0),
+    and after the loop's reinitialisation |grad phi| is ~1 near the surface, seam included."""
+    import coarse
+    coarse.use_spacing(1.0)
+    from bounding_volumes import BoundingRegion
+    from phi_grid import PhiGrid
+    from phi_updater import _thinned, reinitialise_sdf, wall_guard
+    from scipy.ndimage import label
+    X, _, Z = np.meshgrid(*[(np.arange(n) + 0.5) * D for n in (40, 6, 40)], indexing="ij")
+    blocks = np.minimum(_box(X, Z, 0, 10e-3, 5e-3, 25e-3), _box(X, Z, 30e-3, 40e-3, 5e-3, 25e-3))
+    a = np.minimum(blocks, _box(X, Z, 10e-3, 30e-3, 8e-3, 11.4e-3)).astype(np.float32)
+    grown = np.minimum(_box(X, Z, 0, 10e-3, 5e-3, 25.8e-3), _box(X, Z, 30e-3, 40e-3, 5e-3, 25.8e-3))
+    b = np.minimum(grown, _box(X, Z, 10e-3, 30e-3, 8.4e-3, 11.0e-3)).astype(np.float32)
+    g, ok = wall_guard(a, b, D, 3.0e-3, mode="freeze")
+    assert ok and g is not b
+    assert label(g < 0)[1] == 1, "the frozen patch cut a piece loose"
+    assert not _thinned(a, g, D, 3.0e-3).any()
+    assert (g[:, :, 25] < 0).sum() > (a[:, :, 25] < 0).sum(), "the far growth was undone too"
+    z = np.zeros(g.shape, bool)
+    phi = PhiGrid("main_body", BoundingRegion("main_body", (0.0, 0.0, 0.0), g.shape), g.copy(), z, z.copy())
+    reinitialise_sdf(phi)
+    gm = np.linalg.norm(np.stack(np.gradient(phi.grid.astype(np.float64), D)), axis=0)
+    band = (np.abs(phi.grid) < 2 * D)[1:-1, 1:-1, 1:-1]
+    gm = gm[1:-1, 1:-1, 1:-1][band]
+    assert 0.9 < np.median(gm) < 1.1 and np.percentile(gm, 95) < 1.3, (np.median(gm), np.percentile(gm, 95))
+    assert label(phi.grid < 0)[1] == 1
