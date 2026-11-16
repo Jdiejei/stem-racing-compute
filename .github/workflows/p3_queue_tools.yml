@@ -40,4 +40,9 @@ jobs:
             *) echo "unknown action"; exit 1 ;;
           esac
       - uses: actions/upload-artifact@v4
-        with: { name: batch, path: "batch.json\nstate.json", if-no-files-found: ignore }
+        with:
+          name: batch
+          if-no-files-found: ignore
+          path: |
+            batch.json
+            state.json
