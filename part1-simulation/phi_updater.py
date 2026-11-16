@@ -729,6 +729,48 @@ def _wall_half(grid: np.ndarray, spacing_m: float):
     return out
 
 
+# How a cut keeps the 3.0 mm machined wall (2026-11-16). Every cut on the start block was
+# refused: the old check undid a sub-step if ANY cell newly entered thin_wall_mask, by cell
+# index, so a wall that was already thin by a rule zone's design and whose ridge cell moved
+# one cell counted as new, and one thin spot stopped the whole surface (anass 43902774172).
+# Both modes below call a cell newly thin only if its wall is under the limit AND thinner
+# than the thinnest wall within one cell of it before the sub-step (so a wall never gets
+# thinner, and a ridge that only moved is not a new wall):
+#   "compare": such a cell undoes the whole sub-step (the step ends there);
+#   "freeze":  the sub-step is undone only around such cells (one wall width), the rest of
+#              the surface keeps its move; re-checked, and undone whole if it still fails.
+# Which one goes in is decided by p1_wall_stop_lab (not yet run: Actions suspended).
+WALL_GUARD = "freeze"
+
+
+def _thinned(before, after, spacing_m: float, min_wall_m: float):
+    """Cells whose wall is now under min_wall_m and thinner than any wall within one cell of
+    them was in `before`."""
+    from scipy.ndimage import minimum_filter
+    h0 = minimum_filter(_wall_half(before, spacing_m), size=3, mode="nearest")
+    h1 = _wall_half(after, spacing_m)
+    return (h1 < min_wall_m / 2.0) & (h1 < h0 - 1e-7)     # 0.1 um: float32 rounding of the field, not a wall change
+
+
+def wall_guard(before, phi_grid, spacing_m: float, min_wall_m: float, mode: str | None = None,
+               tries: int = 4):
+    """(grid, ok): phi_grid with the 3.0 mm rule applied against `before` (see WALL_GUARD).
+    ok False means the whole sub-step must be undone."""
+    from scipy.ndimage import binary_dilation
+    mode = mode or WALL_GUARD
+    g = phi_grid
+    for _ in range(tries):
+        bad = _thinned(before, g, spacing_m, min_wall_m)
+        if not bad.any():
+            return g, True
+        if mode != "freeze":
+            return before, False
+        r = int(np.ceil(min_wall_m / spacing_m)) + 1
+        zone = binary_dilation(bad, iterations=r)
+        g = np.where(zone, before, g).astype(phi_grid.dtype)
+    return before, False
+
+
 def min_wall_mm(grid: np.ndarray, spacing_m: float) -> float:
     """The body's thinnest wall straight across, mm (inf if it has no wall). See thin_wall_mask."""
     return float(2e3 * _wall_half(grid, spacing_m).min())
@@ -1120,7 +1162,7 @@ def apply_adjoint_to_unified(
     # piece. Walls already thin on entry (a rule zone's own design) are left to be reported.
     from geometry_contract import MIN_MACHINED_WALL_MM
     _wall_m = MIN_MACHINED_WALL_MM * 1e-3
-    thin0 = thin_wall_mask(phi.grid, GRID_SPACING_M, _wall_m)
+    thin0 = thin_wall_mask(phi.grid, GRID_SPACING_M, _wall_m)          # reported only
     n_done, p90, pinned, wall_stop = 0, 0.0, False, False
     for _k in range(max(1, int(max_substeps))):
         if step_dt <= 0:
@@ -1132,9 +1174,9 @@ def apply_adjoint_to_unified(
             phi.grid = before
             pinned = True                      # this sub-step would cut pinned material loose
             break
-        if (thin_wall_mask(phi.grid, GRID_SPACING_M, _wall_m) & ~thin0).any():
-            phi.grid = before
-            enforce_symmetry(geom)
+        phi.grid, wall_ok = wall_guard(before, phi.grid, GRID_SPACING_M, _wall_m)
+        enforce_symmetry(geom)
+        if not wall_ok:
             wall_stop = True                   # this sub-step would leave a wall under 3.0 mm
             break
         n_done += 1
