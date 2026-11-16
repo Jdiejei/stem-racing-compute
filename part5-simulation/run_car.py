@@ -391,6 +391,24 @@ def write_report(out: Path, S: dict) -> None:
 
 
 # --------------------------------------------------------------------------- main
+
+def carve_recipe(a, out: Path) -> Path:
+    """--carve-json: carve the body from its recipe through carve.save (the one carve path) and use
+    it as --phi-npy. The recipe's layout sets W, x_front and d_halo, so one recipe is one car."""
+    import carve
+    if getattr(a, "phi_npy", None):
+        raise SystemExit("give --carve-json or --phi-npy, not both")
+    r = json.loads(a.carve_json)
+    lay = {k: float(r["layout"][k]) for k in ("W", "x_front", "d_halo")}
+    a.W, a.x_front, a.d_halo = lay["W"], lay["x_front"], lay["d_halo"]
+    path = out / "carved.npy"
+    reports = carve.save(lay, r.get("edits", []), path)
+    refused = [x for x in reports if x.get("status") != "ok"]
+    if refused:
+        raise SystemExit(f"carve recipe refused: {refused}")
+    a.phi_npy = str(path)
+    return path
+
 def parse_args(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
@@ -413,6 +431,9 @@ def parse_args(argv=None):
     ap.add_argument("--phi-npy", default=None,
                     help="a carved body instead of --body-json: 'block' (the whole legal envelope) "
                          "or a .npy field saved by a carving run")
+    ap.add_argument("--carve-json", default=None,
+                    help="a carve.carve recipe {\"layout\": {W, x_front, d_halo}, \"edits\": [...]}: the body is carved here "
+                         "through Part 1's one carve path, saved as carved.npy and used as --phi-npy")
     ap.add_argument("--cfd", action="store_true")
     ap.add_argument("--res", default="coarse")
     ap.add_argument("--np", type=int, default=4)
@@ -437,6 +458,8 @@ def main(argv=None):
     a = parse_args(argv)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
+    if a.carve_json:
+        carve_recipe(a, out)
     import assembly as p4
     import legality
     from optimizer_contract import DEFAULT_ROLLING_MU
