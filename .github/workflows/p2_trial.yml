@@ -5,7 +5,8 @@ on:
   workflow_dispatch:
     inputs:
       ref: { default: "reviewer-speedups" }
-      skin: { default: "3.93" }
+      skins: { default: '["3.93"]' }
+      res: { default: "medium" }
       reps: { default: "[1,2]" }
       variants: { required: true }
       maxp: { default: "6" }
@@ -16,14 +17,15 @@ env:
   OMPI_MCA_rmaps_base_oversubscribe: "1"
 jobs:
   car:
-    name: ${{ matrix.v.id }} rep ${{ matrix.rep }}
+    name: ${{ matrix.v.id }} skin ${{ matrix.skin }} rep ${{ matrix.rep }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 240
+    timeout-minutes: 350
     strategy:
       fail-fast: false
       max-parallel: ${{ fromJSON(inputs.maxp) }}
       matrix:
         rep: ${{ fromJSON(inputs.reps) }}
+        skin: ${{ fromJSON(inputs.skins) }}
         v: ${{ fromJSON(inputs.variants) }}
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +48,7 @@ jobs:
           fi
           J=$(python -c "import json,os; d=json.loads(os.environ['CFDJ']); d['layer_overrides']={'nSurfaceLayers':0}; print(json.dumps(d))")
           start=$(date +%s)
-          python -W ignore run_car.py --out ../out/r --body-json '{}' --skin-mm ${{ inputs.skin }} --cfd --res medium --np ${{ matrix.v.np }} --cfd-iters 1000 --cfd-json "$J" 2>&1 | grep -E "partition sha|Traceback|Error" | head -5
+          python -W ignore run_car.py --out ../out/r --body-json '{}' --skin-mm ${{ matrix.skin }} --cfd --res ${{ inputs.res }} --np ${{ matrix.v.np }} --cfd-iters 1000 --cfd-json "$J" 2>&1 | grep -E "partition sha|Traceback|Error" | head -5
           echo "FOURC minutes $(( ($(date +%s) - start) / 60 ))"
       - name: The numbers
         if: always()
